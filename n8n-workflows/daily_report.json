@@ -1,0 +1,120 @@
+{
+  "name": "Daily Report at 6 PM",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 18 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "6 PM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://28hub-api:8000/api/v1/28hub/{{$json.tenant_id}}/dashboard",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Get Daily Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Format daily report\nconst stats = $input.first().json;\nconst today = new Date().toLocaleDateString('pt-BR');\n\nconst message = `📊 *Relatório Diário - ${today}*\\n\\n` +\n  `📈 *MRR:* ${stats.mrr}\\n` +\n  `📝 *Notificações Pendentes:* ${stats.pending_notifications}\\n` +\n  `✅ *Enviadas Hoje:* ${stats.today_notifications}\\n` +\n  `📱 *Status WhatsApp:* ${stats.whatsapp_status}\\n\\n` +\n  `Continue crescendo! 🚀`;\n\nreturn { json: { message, ...stats } };"
+      },
+      "id": "3",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://evolution-api:8080/message/sendText/{{$json.instance}}",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "28hub-enterprise-2025"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.owner_wa_number}}"
+            },
+            {
+              "name": "text",
+              "value": "={{$json.message}}"
+            }
+          ]
+        }
+      },
+      "id": "4",
+      "name": "Send to Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [800, 300]
+    }
+  ],
+  "connections": {
+    "6 PM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Send to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-31T10:00:00.000Z",
+  "versionId": "1"
+}

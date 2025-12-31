@@ -1,0 +1,179 @@
+{
+  "name": "Retry Failed Notifications",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=http://28hub-api:8000/api/v1/28hub/{{$json.tenant_id}}/activities?status=failed",
+        "options": {}
+      },
+      "id": "2",
+      "name": "Get Failed Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Check retry count\nconst item = $input.item.json;\nconst retryCount = item.retry_count || 0;\nconst maxRetries = 3;\n\nif (retryCount >= maxRetries) {\n  // Archive - max retries reached\n  return [{\n    json: {\n      ...item,\n      _action: 'archive',\n      _reason: 'Max retries exceeded'\n    }\n  }];\n}\n\n// Retry\nreturn [{\n  json: {\n    ...item,\n    _action: 'retry',\n    retry_count: retryCount + 1\n  }\n}];"
+      },
+      "id": "3",
+      "name": "Check Retry Count",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "1",
+              "leftValue": "={{ $json._action }}",
+              "rightValue": "retry",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4",
+      "name": "Should Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [800, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://evolution-api:8080/message/sendText/{{$json.instance}}",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "28hub-enterprise-2025"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.telefone}}"
+            },
+            {
+              "name": "text",
+              "value": "=Olá {{$json.client_name}}! Tentando novamente..."
+            }
+          ]
+        }
+      },
+      "id": "5",
+      "name": "Resend WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=http://28hub-api:8000/api/v1/28hub/{{$json.tenant_id}}/notifications/{{$json.id}}/archive",
+        "options": {}
+      },
+      "id": "6",
+      "name": "Archive Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1000, 400]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Failed Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Failed Notifications": {
+      "main": [
+        [
+          {
+            "node": "Check Retry Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry Count": {
+      "main": [
+        [
+          {
+            "node": "Should Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Retry?": {
+      "main": [
+        [
+          {
+            "node": "Resend WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-31T10:00:00.000Z",
+  "versionId": "1"
+}

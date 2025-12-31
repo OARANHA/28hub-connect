@@ -1,0 +1,123 @@
+{
+  "name": "ERP Webhook Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "erp-webhook",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract and format ERP data\nconst data = $input.first().json;\n\nconst formatted = {\n  type: data.tipo || 'sale',\n  client_name: data.cliente || data.nome_cliente,\n  telefone: data.telefone || data.whatsapp,\n  valor: data.valor || data.total,\n  nf_number: data.nf || data.numero_nota\n};\n\nreturn { json: formatted };"
+      },
+      "id": "2",
+      "name": "Format Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://28hub-api:8000/api/v1/28hub/{{$json.tenant_id}}/webhook/erp",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Send to 28hub API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://evolution-api:8080/message/sendText/{{$json.instance}}",
+        "options": {},
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "28hub-enterprise-2025"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "number",
+              "value": "={{$json.telefone}}"
+            },
+            {
+              "name": "text",
+              "value": "=Olá {{$json.client_name}}! 🎉\\n\\nSua compra de R${{$json.valor}} foi confirmada.\\n\\nNota Fiscal: {{$json.nf_number}}\\n\\nObrigado pela preferência!"
+            }
+          ]
+        }
+      },
+      "id": "4",
+      "name": "Send WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [800, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Format Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Data": {
+      "main": [
+        [
+          {
+            "node": "Send to 28hub API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send to 28hub API": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-12-31T10:00:00.000Z",
+  "versionId": "1"
+}

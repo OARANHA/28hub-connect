@@ -1,0 +1,283 @@
+# docker-compose.enterprise.yml - 28HUB CONNECT ENTERPRISE v1.0
+# Production Ready | 6 Containers (evoai/minio commented out) | R$72K MRR Target
+# version: '3.8'
+name: 28hub-connect-enterprise
+
+x-base: &base
+  restart: unless-stopped
+  networks:
+    - 28hub-network
+
+services:
+  # ========================================
+  # DATABASE LAYER
+  # ========================================
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_MULTIPLE_DATABASES: "28hub,evolution,n8n"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 28hub2025
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *base
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *base
+
+  # ========================================
+  # WHATSAPP GATEWAY (Evolution API v2.3.6)
+  # ========================================
+  evolution-api:
+    image: evoapicloud/evolution-api:latest
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_PROVIDER: "postgresql"
+      DATABASE_URL: "postgresql://postgres:28hub2025@postgres:5432/evolution"
+      API_KEY: "28hub-enterprise-2025"
+      
+      # Webhooks para n8n
+      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_URL: "http://n8n:5678/webhook/evolution"
+      WEBHOOK_GLOBAL_EVENTS: "MESSAGES_UPSERT,SEND_MESSAGE,CONNECTION_UPDATE,MESSAGES_UPDATE"
+      WEBHOOK_GLOBAL_BY_EVENTS: "false"
+      WEBHOOK_GLOBAL_BASE64: "false"
+      
+      # Storage mídia
+      # STORAGE_TYPE: "minio"
+      # MINIO_URL: "http://minio:9000"
+      # MINIO_BUCKET: "evolution-media"
+      # MINIO_ACCESS_KEY: "minioadmin"
+      # MINIO_SECRET_KEY: "minioadmin"
+      
+      # Chatbot integrations (Pro/Enterprise)
+      N8N_ENABLED: "true"
+      # EVOAI_ENABLED: "true"
+      OPENAI_ENABLED: "true"
+      CHATWOOT_ENABLED: "false"
+      
+    volumes:
+      - evolution_data:/evolution
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
+    <<: *base
+
+  # ========================================
+  # AUTOMATION LAYER (n8n Queue Mode)
+  # ========================================
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      # Queue Mode (Escalável)
+      EXECUTIONS_MODE: "queue"
+      QUEUE_HEALTH_CHECK_ACTIVE: "true"
+      
+      # Database
+      DB_TYPE: "postgresdb"
+      DB_POSTGRESDB_HOST: "postgres"
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: "n8n"
+      DB_POSTGRESDB_USER: "postgres"
+      DB_POSTGRESDB_PASSWORD: "28hub2025"
+      
+      # Redis Queue
+      QUEUE_BULL_REDIS_HOST: "redis"
+      QUEUE_BULL_REDIS_PORT: "6379"
+      
+      # Auth
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: "admin"
+      N8N_BASIC_AUTH_PASSWORD: "28hub2025"
+      
+      # Timezone
+      GENERIC_TIMEZONE: "America/Sao_Paulo"
+      
+      # Integrations
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      EVOLUTION_API_KEY: "28hub-enterprise-2025"
+      # EVOAI_API_URL: "http://evoai-backend:8001"
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n-workflows:/home/node/.n8n/workflows
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+    <<: *base
+
+  # ========================================
+  # AI LAYER (EvoAI v1.0 - Google ADK)
+  # ========================================
+  # evoai-backend:
+  #   image: evoapicloud/evo-ai:latest
+  #   ports:
+  #     - "8001:8000"
+  #   environment:
+  #     # Database
+  #     POSTGRES_CONNECTION_STRING: "postgresql://postgres:28hub2025@postgres:5432/evo_ai"
+  #     REDIS_HOST: "redis"
+  #     REDIS_PORT: "6379"
+  #
+  #     # Security
+  #     JWT_SECRET_KEY: "evoai-jwt-enterprise-2025"
+  #     ENCRYPTION_KEY: "evoai-encryption-2025"
+  #
+  #     # Evolution Integration
+  #     EVOLUTION_API_URL: "http://evolution-api:8080"
+  #     EVOLUTION_API_KEY: "28hub-enterprise-2025"
+  #
+  #     # AI Engine
+  #     AI_ENGINE: "adk"  # Google Agent Development Kit (default)
+  #
+  #     # LLM Keys (Enterprise)
+  #     OPENAI_API_KEY: "sk-proj-enterprise-xxx"
+  #
+  #     # Production
+  #     ENVIRONMENT: "production"
+  #     DEBUG: "false"
+  #
+  #   volumes:
+  #     - evoai_data:/app/data
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     evolution-api:
+  #       condition: service_started
+  #   <<: *base
+
+  # evoai-frontend:
+  #   image: evolutionapi/evo-ai-frontend:latest
+  #   ports:
+  #     - "8002:3000"
+  #   environment:
+  #     NEXT_PUBLIC_API_URL: "http://evoai-backend:8000"
+  #   depends_on:
+  #     - evoai-backend
+  #   <<: *base
+
+  # ========================================
+  # BUSINESS LAYER (28hub Connect)
+  # ========================================
+  28hub-api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: "postgresql://postgres:28hub2025@postgres:5432/28hub"
+      REDIS_URL: "redis://redis:6379"
+      
+      # Integrations
+      EVOLUTION_URL: "http://evolution-api:8080"
+      EVOLUTION_KEY: "28hub-enterprise-2025"
+      N8N_URL: "http://n8n:5678"
+      # EVOAI_URL: "http://evoai-backend:8001"
+      
+      # Security
+      JWT_SECRET: "28hub-enterprise-jwt-2025"
+      CORS_ORIGINS: "http://localhost:3000,https://28hub.connect"
+      
+      # Stripe (futuro)
+      STRIPE_SECRET_KEY: "sk_live_xxx"
+      
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+      n8n:
+        condition: service_started
+      # evoai-backend:
+      #   condition: service_started
+    <<: *base
+
+  28hub-frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: "http://28hub-api:8000"
+      NEXT_PUBLIC_EVOLUTION_URL: "http://evolution-api:8080"
+      NEXT_PUBLIC_N8N_URL: "http://n8n:5678"
+      # NEXT_PUBLIC_EVOAI_URL: "http://evoai-backend:8001"
+    depends_on:
+      - 28hub-api
+    <<: *base
+
+  # ========================================
+  # STORAGE LAYER (MinIO S3)
+  # ========================================
+  # minio:
+  #   image: minio/minio:RELEASE.2022-10-05T14-58-27Z  # ✅ LICENÇA OK
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     MINIO_ROOT_USER: "minioadmin"
+  #     MINIO_ROOT_PASSWORD: "minioadmin"
+  #   volumes:
+  #     - minio_data:/data
+  #   command: server /data --console-address ":9001"
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 30s
+  #     timeout: 20s
+  #     retries: 3
+  #   <<: *base
+
+# ========================================
+# VOLUMES PERSISTENTES
+# ========================================
+volumes:
+  postgres_data:
+  redis_data:
+  evolution_data:
+  n8n_data:
+  # evoai_data:
+  # minio_data:
+
+# ========================================
+# NETWORK ISOLADO
+# ========================================
+networks:
+  28hub-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
