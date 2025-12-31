@@ -139,44 +139,23 @@ services:
   # ========================================
   # AI LAYER (EvoAI v1.0 - Google ADK)
   # ========================================
-  # evoai-backend:
-  #   image: evoapicloud/evo-ai:latest
-  #   ports:
-  #     - "8001:8000"
-  #   environment:
-  #     # Database
-  #     POSTGRES_CONNECTION_STRING: "postgresql://postgres:28hub2025@postgres:5432/evo_ai"
-  #     REDIS_HOST: "redis"
-  #     REDIS_PORT: "6379"
-  #
-  #     # Security
-  #     JWT_SECRET_KEY: "evoai-jwt-enterprise-2025"
-  #     ENCRYPTION_KEY: "evoai-encryption-2025"
-  #
-  #     # Evolution Integration
-  #     EVOLUTION_API_URL: "http://evolution-api:8080"
-  #     EVOLUTION_API_KEY: "28hub-enterprise-2025"
-  #
-  #     # AI Engine
-  #     AI_ENGINE: "adk"  # Google Agent Development Kit (default)
-  #
-  #     # LLM Keys (Enterprise)
-  #     OPENAI_API_KEY: "sk-proj-enterprise-xxx"
-  #
-  #     # Production
-  #     ENVIRONMENT: "production"
-  #     DEBUG: "false"
-  #
-  #   volumes:
-  #     - evoai_data:/app/data
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #     evolution-api:
-  #       condition: service_started
-  #   <<: *base
+  evoai-backend:
+    image: 28hub/evo-ai:custom-v1.0
+    ports: ["8001:8000"]
+    environment:
+      POSTGRES_CONNECTION_STRING: "postgresql://postgres:28hub2025@postgres:5432/evo_ai"
+      REDIS_HOST: "redis"
+      JWT_SECRET_KEY: "evoai-jwt-enterprise-2025"
+      EVOLUTION_API_URL: "http://evolution-api:8080"
+      EVOLUTION_API_KEY: "28hub-enterprise-2025"
+      AI_ENGINE: "adk"
+    volumes:
+      - evoai_data:/app/data
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: sh -c "alembic upgrade head && (python -m scripts.run_seeders || true) && uvicorn src.main:app --host 0.0.0.0 --port 8000"
+    <<: *base
 
   # evoai-frontend:
   #   image: evolutionapi/evo-ai-frontend:latest
@@ -269,7 +248,7 @@ volumes:
   redis_data:
   evolution_data:
   n8n_data:
-  # evoai_data:
+  evoai_data:
   # minio_data:
 
 # ========================================
