@@ -1,102 +1,109 @@
 version: '3.8'
+name: 28hub-connect
 
 services:
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: 28hub-connect-backend
-    ports:
-      - "8000:8000"
+  postgres:
+    image: postgres:16-alpine
     environment:
-      - DATABASE_URL=postgresql://28hub:28hub_password@db:5432/28hub_db
-      - WHATSAPP_API_KEY=${WHATSAPP_API_KEY}
-      - WHATSAPP_PHONE_NUMBER_ID=${WHATSAPP_PHONE_NUMBER_ID}
-      - AI_API_KEY=${AI_API_KEY}
-      - ENVIRONMENT=production
-    depends_on:
-      - db
-      - redis
-    networks:
-      - 28hub-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: 28hub-connect-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
-      - NODE_ENV=production
-    depends_on:
-      - backend
-    networks:
-      - 28hub-network
-    restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    container_name: 28hub-connect-db
-    environment:
-      - POSTGRES_USER=28hub
-      - POSTGRES_PASSWORD=28hub_password
-      - POSTGRES_DB=28hub_db
+      POSTGRES_DB: 28hub
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 28hub2025
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - 28hub-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U 28hub"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - 28hub-net
 
   redis:
     image: redis:7-alpine
-    container_name: 28hub-connect-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
     networks:
-      - 28hub-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - 28hub-net
 
-  nginx:
-    image: nginx:alpine
-    container_name: 28hub-connect-nginx
+  28hub-evolution:
+    image: evoapicloud/evolution-api:latest
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:8080"
+    environment:
+      - SERVER_URL=http://localhost:8080
+      - AUTHENTICATION_API_KEY=28hub-secret-2025
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://postgres:28hub2025@postgres:5432/evolution_api
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://redis:6379
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - frontend
-      - backend
+      - evolution_data:/evolution/instances
     networks:
-      - 28hub-network
-    restart: unless-stopped
+      - 28hub-net
+    depends_on:
+      - postgres
+      - redis
+
+  28hub-evoai:
+    image: evoapicloud/evo-ai:latest
+    ports:
+      - "8001:8000"
+    environment:
+      - POSTGRES_CONNECTION_STRING=postgresql://postgres:28hub2025@postgres:5432/28hub
+      - REDIS_HOST=redis
+      - JWT_SECRET_KEY=28hub-jwt-2025
+      - ADMIN_INITIAL_PASSWORD=28hub2025
+    networks:
+      - 28hub-net
+    depends_on:
+      - postgres
+      - redis
+
+  28hub-n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=28hub
+      - N8N_BASIC_AUTH_PASSWORD=28hub2025
+      - WEBHOOK_URL=http://localhost:3000
+      - GENERIC_TIMEZONE=America/Sao_Paulo
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - 28hub-net
+
+  28hub-api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:28hub2025@postgres:5432/28hub
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=28hub-jwt-2025
+      - EVOAI_URL=http://28hub-evoai:8000
+      - EVOLUTION_URL=http://28hub-evolution:8080
+      - N8N_URL=http://28hub-n8n:5678
+    networks:
+      - 28hub-net
+    depends_on:
+      - postgres
+      - redis
+      - 28hub-evoai
+      - 28hub-evolution
+      - 28hub-n8n
+
+  28hub-frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_EVOAI_URL=http://localhost:8001
+    networks:
+      - 28hub-net
+    depends_on:
+      - 28hub-api
 
 volumes:
   postgres_data:
-  redis_data:
+  evolution_data:
+  n8n_data:
 
 networks:
-  28hub-network:
+  28hub-net:
     driver: bridge

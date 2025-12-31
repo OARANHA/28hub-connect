@@ -7,13 +7,15 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+import httpx
+import json
 
 # Database configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://28hub:28hub_password@db:5432/28hub_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:28hub2025@postgres:5432/28hub")
+
+# Evolution API configuration
+EVOLUTION_URL = os.getenv("EVOLUTION_URL", "http://28hub-evolution:8080")
+EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "28hub-secret-2025")
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)
@@ -30,6 +32,7 @@ class Tenant(Base):
     name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=False, unique=True)
     phone = Column(String(50), nullable=False)
+    whatsapp_instance = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -44,6 +47,7 @@ class Notification(Base):
     event_type = Column(String(100), nullable=False)
     message = Column(Text, nullable=False)
     status = Column(String(50), default="pending")
+    whatsapp_message_id = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     tenant = relationship("Tenant", back_populates="notifications")
@@ -57,6 +61,7 @@ class TenantCreate(BaseModel):
     name: str
     email: EmailStr
     phone: str
+    whatsapp_instance: Optional[str] = None
 
 
 class TenantResponse(BaseModel):
@@ -64,6 +69,7 @@ class TenantResponse(BaseModel):
     name: str
     email: str
     phone: str
+    whatsapp_instance: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -82,6 +88,7 @@ class NotificationResponse(BaseModel):
     event_type: str
     message: str
     status: str
+    whatsapp_message_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -103,6 +110,90 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Evolution API helper functions
+async def send_whatsapp_message(phone: str, message: str, instance: str = "default") -> dict:
+    """
+    Send WhatsApp message using Evolution API
+    """
+    try:
+        # Format phone number (remove special characters, add @s.whatsapp.net)
+        formatted_phone = phone.replace("+", "").replace("(", "").replace(")", "").replace(" ", "").replace("-", "")
+        if "@" not in formatted_phone:
+            formatted_phone = f"{formatted_phone}@s.whatsapp.net"
+        
+        url = f"{EVOLUTION_URL}/message/sendText/{instance}"
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": EVOLUTION_API_KEY
+        }
+        payload = {
+            "number": formatted_phone,
+            "text": message
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as e:
+        print(f"Error sending WhatsApp message: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to send WhatsApp message: {str(e)}"
+        )
+
+
+async def create_whatsapp_instance(instance_name: str) -> dict:
+    """
+    Create a new WhatsApp instance in Evolution API
+    """
+    try:
+        url = f"{EVOLUTION_URL}/instance/create"
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": EVOLUTION_API_KEY
+        }
+        payload = {
+            "instanceName": instance_name,
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS"
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as e:
+        print(f"Error creating WhatsApp instance: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create WhatsApp instance: {str(e)}"
+        )
+
+
+async def connect_whatsapp_instance(instance_name: str) -> dict:
+    """
+    Connect an existing WhatsApp instance
+    """
+    try:
+        url = f"{EVOLUTION_URL}/instance/connect/{instance_name}"
+        headers = {
+            "Content-Type": "application/json",
+            "apikey": EVOLUTION_API_KEY
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPError as e:
+        print(f"Error connecting WhatsApp instance: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to connect WhatsApp instance: {str(e)}"
+        )
 
 
 # Initialize FastAPI app
@@ -142,6 +233,7 @@ async def register_tenant(tenant: TenantCreate, db: Session = Depends(get_db)):
     - **name**: Organization name
     - **email**: Contact email (must be unique)
     - **phone**: Contact phone number
+    - **whatsapp_instance**: Optional WhatsApp instance name
     """
     # Check if email already exists
     existing_tenant = db.query(Tenant).filter(Tenant.email == tenant.email).first()
@@ -151,11 +243,22 @@ async def register_tenant(tenant: TenantCreate, db: Session = Depends(get_db)):
             detail="Email already registered"
         )
     
+    # Create WhatsApp instance if provided
+    instance_name = tenant.whatsapp_instance or f"tenant_{tenant.email.replace('@', '_').replace('.', '_')}"
+    
+    try:
+        # Try to create the instance
+        await create_whatsapp_instance(instance_name)
+    except HTTPException:
+        # Instance might already exist, try to connect
+        pass
+    
     # Create new tenant
     new_tenant = Tenant(
         name=tenant.name,
         email=tenant.email,
-        phone=tenant.phone
+        phone=tenant.phone,
+        whatsapp_instance=instance_name
     )
     db.add(new_tenant)
     db.commit()
@@ -193,8 +296,25 @@ async def erp_webhook(tenant_id: int, notification: NotificationCreate, db: Sess
     db.commit()
     db.refresh(new_notification)
     
-    # TODO: Send WhatsApp notification here
-    # TODO: Process with AI if needed
+    # Send WhatsApp notification
+    if tenant.whatsapp_instance and tenant.phone:
+        try:
+            result = await send_whatsapp_message(
+                phone=tenant.phone,
+                message=notification.message,
+                instance=tenant.whatsapp_instance
+            )
+            
+            # Update notification status
+            new_notification.status = "delivered"
+            new_notification.whatsapp_message_id = result.get("key", {}).get("id")
+            db.commit()
+            db.refresh(new_notification)
+        except HTTPException as e:
+            # Mark as failed but don't fail the entire request
+            new_notification.status = "failed"
+            db.commit()
+            db.refresh(new_notification)
     
     return new_notification
 
@@ -230,6 +350,70 @@ async def get_dashboard(tenant_id: int, db: Session = Depends(get_db)):
         pending_notifications=pending_notifications,
         delivered_notifications=delivered_notifications
     )
+
+
+# WhatsApp instance management endpoints
+@app.post("/api/v1/28hub/{tenant_id}/whatsapp/connect", tags=["WhatsApp"])
+async def connect_whatsapp(tenant_id: int, db: Session = Depends(get_db)):
+    """
+    Connect/Reconnect WhatsApp instance for a tenant
+    
+    - **tenant_id**: ID of the tenant
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+    
+    if not tenant.whatsapp_instance:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No WhatsApp instance configured for this tenant"
+        )
+    
+    result = await connect_whatsapp_instance(tenant.whatsapp_instance)
+    return {
+        "status": "success",
+        "instance": tenant.whatsapp_instance,
+        "qr_code": result.get("qrcode"),
+        "message": "WhatsApp connection initiated. Scan the QR code to connect."
+    }
+
+
+@app.post("/api/v1/28hub/{tenant_id}/whatsapp/send", tags=["WhatsApp"])
+async def send_message(tenant_id: int, message_data: dict, db: Session = Depends(get_db)):
+    """
+    Send a custom WhatsApp message for a tenant
+    
+    - **tenant_id**: ID of the tenant
+    - **message**: Message content to send
+    """
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tenant not found"
+        )
+    
+    if not tenant.whatsapp_instance or not tenant.phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="WhatsApp not configured for this tenant"
+        )
+    
+    result = await send_whatsapp_message(
+        phone=tenant.phone,
+        message=message_data.get("message", ""),
+        instance=tenant.whatsapp_instance
+    )
+    
+    return {
+        "status": "success",
+        "message_id": result.get("key", {}).get("id"),
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 # Root endpoint
