@@ -257,6 +257,68 @@ Nenhum erro de "redis disconnected" nos logs da Evolution API.
 
 ---
 
+## 🚨 Problema 6: n8n - Webhooks Não Configurados
+
+### Descrição do Problema
+A Evolution API estava tentando enviar webhooks para endpoints que não existiam no n8n, resultando em erros 404 repetitivos nos logs:
+
+**Webhooks Tentando Enviar**:
+- `http://n8n:5678/webhook/evolution` - 404 Not Found
+- `http://n8n:5678/webhook/evolution/qrcode-updated` - 404 Not Found
+
+**Causa Raiz**:
+- n8n está rodando e saudável
+- Workflows existem no diretório `n8n-workflows/` mas não foram importados/ativados
+- Os endpoints de webhook não foram criados na interface do n8n
+- A configuração dos workflows precisa ser feita manualmente via interface web do n8n em `http://localhost:5678`
+
+### Solução Implementada
+
+#### Correção Temporária: Desabilitar Webhooks
+Alterado [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:79) para desabilitar webhooks temporariamente:
+
+```yaml
+evolution-api:
+  environment:
+    # ... outras variáveis ...
+    WEBHOOK_GLOBAL_ENABLED: "false"  # ← Desabilitado temporariamente
+    WEBHOOK_GLOBAL_URL: "http://n8n:5678/webhook/evolution"
+    WEBHOOK_GLOBAL_EVENTS: "MESSAGES_UPSERT,SEND_MESSAGE,CONNECTION_UPDATE"
+```
+
+### Arquivos Modificados
+- [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:79) - `WEBHOOK_GLOBAL_ENABLED` alterado de `"true"` para `"false"`
+
+### Verificação
+```bash
+# Verificar logs do Evolution API (não deve mostrar mais erros 404 de webhook)
+docker logs 28hub-connect-enterprise_evolution-api --tail 50
+
+# Verificar n8n está funcionando
+curl http://localhost:5678/healthz
+# Esperado: {"status":"ok"}
+```
+
+### Como Reabilitar Webhooks (Quando n8n Estiver Configurado)
+
+Para reabilitar webhooks quando n8n estiver configurado:
+
+1. Acessar interface do n8n em: http://localhost:5678
+2. Importar workflows do diretório `./n8n-workflows/`
+3. Criar endpoints de webhook com os caminhos corretos:
+   - `/webhook/evolution`
+   - `/webhook/evolution/qrcode-updated`
+4. Alterar [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:79):
+   ```yaml
+   WEBHOOK_GLOBAL_ENABLED: "true"
+   ```
+5. Recriar container evolution-api:
+   ```bash
+   docker compose -f docker-compose.enterprise.yml up -d --force-recreate evolution-api
+   ```
+
+---
+
 ## 📊 Status Final dos Serviços
 
 | Serviço | Porta | Status | Observações |
@@ -292,8 +354,12 @@ Nenhum erro de "redis disconnected" nos logs da Evolution API.
     - Remoção de arquivos evolution.env conflitantes
 
 5. **"🔧 Fix Redis connection for Evolution API"**
-    - Correção das variáveis de ambiente do Redis cache
-    - Adicionadas variáveis `CACHE_REDIS_*` conforme esperado pela Evolution API v2
+     - Correção das variáveis de ambiente do Redis cache
+     - Adicionadas variáveis `CACHE_REDIS_*` conforme esperado pela Evolution API v2
+
+6. **"🔕 Temporarily disable webhooks until n8n is properly configured"**
+   - Desabilitados webhooks temporariamente para evitar erros 404
+   - Webhooks podem ser reabilitados após configuração manual do n8n
 
 ---
 
@@ -308,6 +374,8 @@ Nenhum erro de "redis disconnected" nos logs da Evolution API.
 4. **Volume Reset**: Ao mudar configurações de database que afetam estrutura, é necessário remover e recriar volumes para garantir limpeza.
 
 5. **Verificação de Documentação Oficial**: A Evolution API v2 possui diferenças significativas de variáveis de ambiente em relação às versões anteriores. Sempre verificar a documentação oficial para confirmar os nomes corretos das variáveis (ex: `AUTHENTICATION_API_KEY` em vez de `API_KEY`, `CACHE_REDIS_*` em vez de `REDIS_*`).
+
+6. **Configuração de Webhooks Externos**: Webhooks dependem de endpoints externos que devem ser configurados antes de serem habilitados. Ao integrar serviços como n8n, é essencial garantir que os workflows e endpoints estejam importados e ativos antes de habilitar o envio de webhooks para evitar erros 404 repetitivos.
 
 ---
 
