@@ -21,11 +21,18 @@ def upgrade():
         sa.Column('tenant_id', UUID(as_uuid=True), sa.ForeignKey('tenants.id', ondelete='CASCADE')),
         sa.Column('type', sa.String(50)),  # sale|quote|payment
         sa.Column('client_name', sa.String(255)),
+        sa.Column('client_phone', sa.String(255), nullable=True),
         sa.Column('telefone', sa.String(20)),
         sa.Column('valor', sa.Numeric(10, 2)),
+        sa.Column('value', sa.Numeric(10, 2), nullable=True),
         sa.Column('nf_number', sa.String(100)),
         sa.Column('status', sa.String(50), default='pending'),  # pending|sent|failed
+        sa.Column('retry_count', sa.Integer(), server_default='0', nullable=False),
+        sa.Column('error_message', sa.Text(), nullable=True),
         sa.Column('whatsapp_message_id', sa.String(100)),
+        sa.Column('whatsapp_id', sa.String(255), nullable=True),
+        sa.Column('products', sa.JSON(), nullable=True),
+        sa.Column('sent_at', sa.DateTime(), nullable=True),
         sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.text('NOW()')),
     )
 

@@ -1,47 +1,60 @@
-FROM node:18-alpine AS base
+# Build stage
+FROM node:20.15.1-alpine AS builder
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
-# Install dependencies based on the preferred package manager
-COPY package.json ./
-RUN npm install --legacy-peer-deps
+# Define build arguments with default values
+ARG NEXT_PUBLIC_API_URL=https://api.evo-ai.co
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Install pnpm globally
+RUN npm install -g pnpm
+
+# Copy package files first for better caching
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --no-frozen-lockfile
+
+# Copy all source code (this includes tsconfig.json, lib/, etc.)
 COPY . .
 
-# Build the application
-RUN npm run build
+# Set environment variables from build arguments
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# Production image, copy all the files and run next
-FROM base AS runner
+# Build the application
+RUN pnpm run build
+
+# Production stage
+FROM node:20.15.1-alpine AS runner
+
 WORKDIR /app
 
-ENV NODE_ENV production
+# Define build arguments again for the runner stage
+ARG NEXT_PUBLIC_API_URL=https://api-evoai.evoapicloud.com
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+# Install pnpm globally
+RUN npm install -g pnpm
 
+# Install production dependencies only
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --no-frozen-lockfile
+
+# Copy built assets from builder
+COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/next.config.mjs ./
 
-# Set the correct permission for prerender cache
-RUN mkdir .next
-RUN chown nextjs:nodejs .next
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
-# Automatically leverage output traces to reduce image size
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Script to replace environment variables at runtime
+COPY docker-entrypoint.sh ./
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
 
-USER nextjs
-
+# Expose port
 EXPOSE 3000
 
-ENV PORT 3000
-ENV HOSTNAME "0.0.0.0"
-
-CMD ["node", "server.js"]
+# Use entrypoint script to initialize environment variables before starting the app
+ENTRYPOINT ["sh", "./docker-entrypoint.sh"] 
