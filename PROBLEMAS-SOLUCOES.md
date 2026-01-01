@@ -103,16 +103,7 @@ evolution-api:
     DATABASE_PROVIDER: "postgresql"
 ```
 
-#### 3. Criação do evolution.env
-Arquivo de configuração customizado para sobrescrever as variáveis internas da Evolution API:
-```env
-DATABASE_CONNECTION_URI=postgresql://postgres:28hub2025@postgres:5432/evolution_db?schema=evolution_api
-DATABASE_PROVIDER=postgresql
-DATABASE_URL=postgresql://postgres:28hub2025@postgres:5432/evolution_db
-REDIS_URI=redis://redis:6379/6
-```
-
-#### 4. Remount de Volumes Docker
+#### 3. Remount de Volumes Docker
 ```bash
 docker compose -f docker-compose.enterprise.yml down -v
 docker volume rm 28hub-connect-enterprise_postgres_data
@@ -122,7 +113,6 @@ docker compose -f docker-compose.enterprise.yml up -d
 ### Arquivos Modificados
 - [`init-databases.sql`](init-databases.sql:1) - Banco renomeado para evolution_db
 - [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:47) - DATABASE_URL atualizado
-- [`evolution.env`](evolution.env:1) - Novo arquivo criado
 
 ### Verificação
 ```bash
@@ -144,6 +134,75 @@ Após a correção, o Prisma criou 37 tabelas incluindo:
 - `evolution_api.messages` - Mensagens
 - `evolution_api.chats` - Chats
 - Mais 33 tabelas de configuração
+
+---
+
+## 🚨 Problema 4: Evolution API v2 - Variável de Autenticação Incorreta
+
+### Descrição do Problema
+A Evolution API v2.3.7 utiliza nomes diferentes de variáveis de ambiente para autenticação em comparação com versões anteriores:
+
+**Variável Incorreta**:
+- `API_KEY` (versão anterior)
+
+**Variável Correta (v2)**:
+- `AUTHENTICATION_TYPE: "apikey"`
+- `AUTHENTICATION_API_KEY: "28hub-enterprise-2025"`
+
+Isso causava falhas na autenticação da API.
+
+### Solução Implementada
+
+#### 1. Atualização do docker-compose.enterprise.yml
+Removido `API_KEY` e adicionadas as variáveis corretas da v2:
+
+```yaml
+evolution-api:
+  environment:
+    # ✅ AUTHENTICATION v2 OFICIAL (CRÍTICO!)
+    AUTHENTICATION_TYPE: "apikey"
+    AUTHENTICATION_API_KEY: "28hub-enterprise-2025"
+    
+    # ✅ DATABASE v2 OFICIAL (Docs)
+    DATABASE_ENABLED: "true"
+    DATABASE_PROVIDER: "postgresql"
+    DATABASE_CONNECTION_URI: "postgresql://postgres:28hub2025@postgres:5432/evolution_db?schema=evolution_api"
+    DATABASE_CONNECTION_CLIENT_NAME: "evolution_exchange"
+    
+    # ✅ Storage (obrigatório)
+    DATABASE_SAVE_DATA_INSTANCE: "true"
+    DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+    DATABASE_SAVE_DATA_CONTACTS: "true"
+    
+    # Webhooks
+    WEBHOOK_GLOBAL_ENABLED: "true"
+    WEBHOOK_GLOBAL_URL: "http://n8n:5678/webhook/evolution"
+```
+
+#### 2. Remoção de Arquivos Conflitantes
+Removidos os arquivos `evolution.env` e `.evolution.env` que podiam causar conflito com as variáveis do docker-compose.
+
+### Arquivos Modificados
+- [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:50) - Atualizadas variáveis de autenticação v2
+- Removido: [`evolution.env`](evolution.env:1)
+- Removido: [`.evolution.env`](.evolution.env:1)
+
+### Verificação
+```bash
+# Testar autenticação com header correto
+curl -H "apikey: 28hub-enterprise-2025" http://localhost:8080/health
+
+# Criar instância de teste
+curl -H "apikey: 28hub-enterprise-2025" \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName":"28hub-teste"}' \
+  http://localhost:8080/instance/create/28hub-teste
+```
+
+### Resposta Esperada
+```json
+{"status":200,"message":"Welcome to the Evolution API, it is working!","version":"2.3.7"}
+```
 
 ---
 
@@ -177,6 +236,10 @@ Após a correção, o Prisma criou 37 tabelas incluindo:
    - Correção crítica do banco de dados Evolution API
    - Migrado com sucesso 37 tabelas
 
+4. **"🔐 Fix Evolution API v2 auth: AUTHENTICATION_API_KEY + remove evolution.env"**
+   - Correção das variáveis de autenticação v2
+   - Remoção de arquivos evolution.env conflitantes
+
 ---
 
 ## 📝 Lições Aprendidas
@@ -188,6 +251,8 @@ Após a correção, o Prisma criou 37 tabelas incluindo:
 3. **Licenças de Software**: Verificar licenças de dependências antes de deployment em produção é essencial para conformidade empresarial.
 
 4. **Volume Reset**: Ao mudar configurações de database que afetam estrutura, é necessário remover e recriar volumes para garantir limpeza.
+
+5. **Verificação de Documentação Oficial**: A Evolution API v2 possui diferenças significativas de variáveis de ambiente em relação às versões anteriores. Sempre verificar a documentação oficial para confirmar os nomes corretos das variáveis (ex: `AUTHENTICATION_API_KEY` em vez de `API_KEY`).
 
 ---
 
