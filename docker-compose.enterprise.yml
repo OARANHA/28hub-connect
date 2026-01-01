@@ -61,7 +61,7 @@ services:
       # ✅ AUTHENTICATION v2 OFICIAL (CRÍTICO!)
       AUTHENTICATION_TYPE: "apikey"
       AUTHENTICATION_API_KEY: "28hub-enterprise-2025"
-      CONFIG_SESSION_PHONE_VERSION: 2.3000.1031523117
+      CONFIG_SESSION_PHONE_VERSION: 2.3000.1031551448
 
       # ✅ Storage (obrigatório)
       DATABASE_SAVE_DATA_INSTANCE: "true"
@@ -76,7 +76,7 @@ services:
       CACHE_REDIS_SAVE_INSTANCES: "true"
       
       # Webhooks
-      WEBHOOK_GLOBAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
       WEBHOOK_GLOBAL_URL: "http://n8n:5678/webhook/evolution"
       
     volumes:
