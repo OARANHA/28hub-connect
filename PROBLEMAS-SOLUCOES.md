@@ -206,6 +206,57 @@ curl -H "apikey: 28hub-enterprise-2025" \
 
 ---
 
+## 🚨 Problema 5: Evolution API - Configuração Incorreta do Redis
+
+### Descrição do Problema
+A Evolution API v2.3.7 esperava variáveis de ambiente específicas para conexão com Redis (`CACHE_REDIS_*`), mas o docker-compose estava configurando apenas variáveis genéricas (`REDIS_*`). Isso causava erros de "redis disconnected" nos logs da API.
+
+**Variáveis Incorretas**:
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_URI` (genérico)
+
+**Variáveis Corretas**:
+- `CACHE_REDIS_ENABLED: "true"`
+- `CACHE_REDIS_URI: "redis://redis:6379/6"`
+- `CACHE_REDIS_PREFIX_KEY: "evolution"`
+- `CACHE_REDIS_TTL: "604800"`
+- `CACHE_REDIS_SAVE_INSTANCES: "true"`
+
+### Solução Implementada
+
+#### Atualização do docker-compose.enterprise.yml
+Adicionadas as variáveis de cache Redis corretas no serviço evolution-api:
+
+```yaml
+evolution-api:
+  environment:
+    # ... variáveis existentes ...
+    CACHE_REDIS_ENABLED: "true"
+    CACHE_REDIS_URI: "redis://redis:6379/6"  # database 6
+    CACHE_REDIS_PREFIX_KEY: "evolution"
+    CACHE_REDIS_TTL: "604800"
+    CACHE_REDIS_SAVE_INSTANCES: "true"
+```
+
+### Arquivos Modificados
+- [`docker-compose.enterprise.yml`](docker-compose.enterprise.yml:1) - Adicionadas variáveis `CACHE_REDIS_*`
+
+### Verificação
+```bash
+# Verificar logs do Evolution API
+docker logs 28hub-connect-enterprise_evolution-api | grep -i redis
+
+# Testar conexão Redis
+docker exec -it 28hub-connect-enterprise_redis redis-cli ping
+# Esperado: PONG
+```
+
+### Resultado Esperado
+Nenhum erro de "redis disconnected" nos logs da Evolution API.
+
+---
+
 ## 📊 Status Final dos Serviços
 
 | Serviço | Porta | Status | Observações |
@@ -237,8 +288,12 @@ curl -H "apikey: 28hub-enterprise-2025" \
    - Migrado com sucesso 37 tabelas
 
 4. **"🔐 Fix Evolution API v2 auth: AUTHENTICATION_API_KEY + remove evolution.env"**
-   - Correção das variáveis de autenticação v2
-   - Remoção de arquivos evolution.env conflitantes
+    - Correção das variáveis de autenticação v2
+    - Remoção de arquivos evolution.env conflitantes
+
+5. **"🔧 Fix Redis connection for Evolution API"**
+    - Correção das variáveis de ambiente do Redis cache
+    - Adicionadas variáveis `CACHE_REDIS_*` conforme esperado pela Evolution API v2
 
 ---
 
@@ -252,7 +307,7 @@ curl -H "apikey: 28hub-enterprise-2025" \
 
 4. **Volume Reset**: Ao mudar configurações de database que afetam estrutura, é necessário remover e recriar volumes para garantir limpeza.
 
-5. **Verificação de Documentação Oficial**: A Evolution API v2 possui diferenças significativas de variáveis de ambiente em relação às versões anteriores. Sempre verificar a documentação oficial para confirmar os nomes corretos das variáveis (ex: `AUTHENTICATION_API_KEY` em vez de `API_KEY`).
+5. **Verificação de Documentação Oficial**: A Evolution API v2 possui diferenças significativas de variáveis de ambiente em relação às versões anteriores. Sempre verificar a documentação oficial para confirmar os nomes corretos das variáveis (ex: `AUTHENTICATION_API_KEY` em vez de `API_KEY`, `CACHE_REDIS_*` em vez de `REDIS_*`).
 
 ---
 
