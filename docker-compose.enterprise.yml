@@ -154,11 +154,14 @@ services:
     environment:
       POSTGRES_CONNECTION_STRING: "postgresql://postgres:28hub2025@postgres:5432/evo_ai"
       REDIS_HOST: "redis"
-      JWT_SECRET_KEY: "28hub-evoai-jwt-2025"
+      JWT_SECRET_KEY: "F4PcytRG6KpCl7aStsEHgIOb434XQuAhvOnKldOaEzE="
       EVOLUTION_API_URL: "http://evolution-api:8080"
-      EVOLUTION_API_KEY: "28hub-enterprise-2025"
-      EVOAI_API_KEY: "28hub-evoai-integration-2025"
+      EVOLUTION_API_KEY: "F4PcytRG6KpCl7aStsEHgIOb434XQuAhvOnKldOaEzE="
+      EVOAI_API_KEY: "F4PcytRG6KpCl7aStsEHgIOb434XQuAhvOnKldOaEzE="
       AI_ENGINE: "adk"
+  # ✅ ADICIONAR ESTAS 2 LINHAS:
+      ADMIN_INITIAL_PASSWORD: "Admin@123456"
+      ENCRYPTION_KEY: "0xHsAqDt-mVcNuCjICckLqNVwNI56CkXxrLa6ujaq08="
     volumes:
       - evoai_data:/app/data
     depends_on:
@@ -172,10 +175,11 @@ services:
     ports:
       - "8002:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "http://evoai-backend:8000"
-      NEXT_PUBLIC_EVOLUTION_URL: "http://evolution-api:8080"
-      NEXT_PUBLIC_N8N_URL: "http://n8n:5678"
-      NEXT_PUBLIC_28HUB_URL: "http://28hub-api:8000"
+      # Usar localhost para acesso via navegador (NEXT_PUBLIC_* é build-time)
+      NEXT_PUBLIC_API_URL: "http://localhost:8001"
+      NEXT_PUBLIC_EVOLUTION_URL: "http://localhost:8080"
+      NEXT_PUBLIC_N8N_URL: "http://localhost:5678"
+      NEXT_PUBLIC_28HUB_URL: "http://localhost:8000"
     depends_on:
       - evoai-backend
       - redis
@@ -190,10 +194,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: "http://28hub-api:8000"
-      NEXT_PUBLIC_EVOAI_URL: "http://evoai-backend:8000"
-      NEXT_PUBLIC_EVOLUTION_URL: "http://evolution-api:8080"
-      NEXT_PUBLIC_N8N_URL: "http://n8n:5678"
+      # Usar localhost para acesso via navegador (NEXT_PUBLIC_* é build-time)
+      NEXT_PUBLIC_API_URL: "http://localhost:8000"
+      NEXT_PUBLIC_EVOAI_URL: "http://localhost:8001"
+      NEXT_PUBLIC_EVOLUTION_URL: "http://localhost:8080"
+      NEXT_PUBLIC_N8N_URL: "http://localhost:5678"
     depends_on:
       - 28hub-api
       - evoai-backend
